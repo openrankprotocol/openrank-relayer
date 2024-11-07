@@ -69,7 +69,57 @@ impl SQLDatabase {
             },
         }
 
+        let drop_state = self.client.execute("DROP TABLE IF EXISTS jobs", &[]).await;
+        match drop_state {
+            Ok(_) => {
+                log::info!("Dropped job table.");
+            },
+            Err(e) => {
+                log::error!("Error dropping job table: {}", e);
+                return Err(e);
+            },
+        }
+
         Ok(())
+    }
+
+    pub async fn insert_job(
+        &self, seq_number: i32, transaction_hashes: Vec<String>,
+    ) -> Result<(), Error> {
+        let result = self.client.execute(
+            "INSERT INTO jobs (transaction_hashes, seq_number) VALUES ($1, $2) ON CONFLICT (seq_number) DO NOTHING",
+            &[&transaction_hashes, &seq_number]
+        ).await;
+
+        match result {
+            Ok(rows) => {
+                if rows == 0 {
+                    log::warn!(
+                        "No rows inserted, possibly due to conflict with seq_number '{}'",
+                        seq_number
+                    );
+                } else {
+                    log::info!("Inserted {} row(s) into jobs table.", rows);
+                }
+                Ok(())
+            },
+            Err(e) => {
+                if let Some(db_error) = e.as_db_error() {
+                    if db_error.message().contains("duplicate key value violates unique constraint")
+                    {
+                        log::warn!(
+                            "Conflict occurred: seq_number '{}' already exists",
+                            seq_number
+                        );
+                    } else {
+                        log::error!("Error inserting job: {}", db_error.message());
+                    }
+                } else {
+                    log::error!("Error inserting job: {}", e);
+                }
+                Err(e)
+            },
+        }
     }
 
     pub async fn insert_events(&self, event_id: &str, tx: &TxWithHash) -> Result<(), Error> {

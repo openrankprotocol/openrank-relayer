@@ -1,11 +1,13 @@
+use crate::protocol_client::RpcClient;
 use crate::types::TxWithHash;
-use log::info;
+use log::{error, info};
 use openrank_common::db::{self, Db, DbItem};
 use openrank_common::tx::{self, compute, consts};
 use std::collections::HashMap;
 use tokio::time::Duration;
 
 mod postgres;
+mod protocol_client;
 mod types;
 
 const INTERVAL_SECONDS: u64 = 10;
@@ -15,6 +17,7 @@ pub struct SQLRelayer {
     db: Db,
     last_processed_keys: HashMap<String, Option<usize>>,
     target_db: postgres::SQLDatabase,
+    protocol_client: RpcClient,
 }
 
 impl SQLRelayer {
@@ -43,7 +46,9 @@ impl SQLRelayer {
         .unwrap();
         last_processed_keys.insert(path, last_processed_key);
 
-        SQLRelayer { db, last_processed_keys, target_db }
+        let protocol_client = RpcClient::new("https://or-dev-prod.k3l.io");
+
+        SQLRelayer { db, last_processed_keys, target_db, protocol_client }
     }
 
     async fn save_last_processed_key(&self, db_path: &str, topic: &str, last_processed_key: usize) {
@@ -64,102 +69,56 @@ impl SQLRelayer {
     }
 
     async fn index(&mut self) {
-        // Refresh secondary instance before starting
         self.db.refresh().unwrap();
 
         let results = self.db.read_from_end::<compute::Result>("result", None).unwrap();
         let dir = self.db.get_config().secondary.expect("Secondary path missing");
         let last_count = self.last_processed_keys[dir.as_str()].unwrap_or(0);
-        let mut current_count = 0;
+        let mut current_count = last_count;
 
         log::info!("Indexing db, last_count: {:?}", last_count);
-        for res in &results[0..] {
-            // Ensure Result's are loaded in sequence
-            // assert_eq!(last_count as u64, res.seq_number.unwrap());
+        loop {
+            let compute_result = self
+                .protocol_client
+                .sequencer_get_compute_result(current_count.try_into().unwrap())
+                .await
+                .unwrap();
 
-            // ComputeRequest
-            let (request_key, request_tx_with_hash) =
-                self.get_tx_with_hash(consts::COMPUTE_REQUEST, res.compute_request_tx_hash.clone());
+            if let Some(error) = compute_result.get("error") {
+                error!("{:?}", compute_result);
+                break;
+            }
+            let result = compute_result.get("result").unwrap();
 
-            current_count += 1;
+            let mut hashes = vec![
+                result
+                    .get("compute_commitment_tx_hash")
+                    .and_then(|v| v.as_str())
+                    .expect("must be a string")
+                    .to_string(),
+                result
+                    .get("compute_request_tx_hash")
+                    .and_then(|v| v.as_str())
+                    .expect("must be a string")
+                    .to_string(),
+            ];
 
-            let request_key_str = String::from_utf8_lossy(&request_key);
-
-            if current_count > last_count {
-                self.target_db
-                    .insert_events(&request_key_str, &request_tx_with_hash)
-                    .await
-                    .unwrap();
+            if let Some(verification_hashes) =
+                result.get("compute_verification_tx_hashes").and_then(|v| v.as_array())
+            {
+                hashes.extend(
+                    verification_hashes.iter().filter_map(|v| v.as_str().map(|s| s.to_string())),
+                );
             }
 
-            // ComputeCommitment
-            let (commitment_key, commitment_tx_with_hash) = self.get_tx_with_hash(
-                consts::COMPUTE_COMMITMENT,
-                res.compute_commitment_tx_hash.clone(),
-            );
+            let seq_number = result
+                .get("seq_number")
+                .and_then(|v| v.as_i64())
+                .expect("seq_number should be an integer") as i32;
 
-            current_count += 1;
+            self.target_db.insert_job(seq_number, hashes).await.unwrap();
 
-            let commitment_key_str = String::from_utf8_lossy(&commitment_key);
-
-            if current_count > last_count {
-                self.target_db
-                    .insert_events(&commitment_key_str, &commitment_tx_with_hash)
-                    .await
-                    .unwrap();
-            }
-
-            // ComputeVerification
-            for verification_tx_hash in res.compute_verification_tx_hashes.clone() {
-                current_count += 1;
-
-                let (verification_key, verification_tx_with_hash) =
-                    self.get_tx_with_hash(consts::COMPUTE_VERIFICATION, verification_tx_hash);
-
-                let verification_key_str = String::from_utf8_lossy(&verification_key);
-
-                if current_count > last_count {
-                    self.target_db
-                        .insert_events(&verification_key_str, &verification_tx_with_hash)
-                        .await
-                        .unwrap();
-                }
-            }
-        }
-
-        let trust_updates = self.db.read_from_end::<tx::Tx>(consts::TRUST_UPDATE, None).unwrap();
-
-        for update in trust_updates {
-            current_count += 1;
-
-            let trust_update_key = tx::Tx::construct_full_key(consts::TRUST_UPDATE, update.hash());
-            let trust_update_tx_with_hash = TxWithHash { tx: update.clone(), hash: update.hash() };
-
-            let trust_update_key_str = String::from_utf8_lossy(&trust_update_key);
-
-            if current_count > last_count {
-                self.target_db
-                    .insert_events(&trust_update_key_str, &trust_update_tx_with_hash)
-                    .await
-                    .unwrap();
-            }
-        }
-
-        let seed_updates = self.db.read_from_end::<tx::Tx>(consts::SEED_UPDATE, None).unwrap();
-
-        for update in seed_updates {
-            current_count += 1;
-
-            let seed_update_key = tx::Tx::construct_full_key(consts::SEED_UPDATE, update.hash());
-            let seed_update_tx_with_hash = TxWithHash { tx: update.clone(), hash: update.hash() };
-
-            let seed_update_key_str = String::from_utf8_lossy(&seed_update_key);
-            if current_count > last_count {
-                self.target_db
-                    .insert_events(&seed_update_key_str, &seed_update_tx_with_hash)
-                    .await
-                    .unwrap();
-            }
+            current_count = current_count + 1;
         }
 
         if last_count < current_count {

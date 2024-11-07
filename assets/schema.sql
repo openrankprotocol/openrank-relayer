@@ -12,6 +12,14 @@ CREATE TABLE events (
     compute VARCHAR
 );
 
+CREATE TABLE jobs (
+    id SERIAL PRIMARY KEY, 
+    transaction_hashes VARCHAR[] NOT NULL, 
+    seq_number INTEGER NOT NULL UNIQUE
+);
+
+CREATE INDEX idx_jobs_seq_number ON jobs (seq_number);
+
 CREATE TABLE state (
     id SERIAL PRIMARY KEY,
     key_name VARCHAR UNIQUE NOT NULL,
