@@ -58,7 +58,7 @@ impl SQLRelayer {
                 .unwrap();
 
             if let Some(error) = compute_result.get("error") {
-                error!("{:?}", compute_result);
+                // error!("{:?}", compute_result);
                 break;
             }
             let result = compute_result.get("result").unwrap();
@@ -98,10 +98,22 @@ impl SQLRelayer {
                 ("compute_request", compute_request_tx_hash.clone()),
             ];
 
-            let verification_transactions: Vec<(&str, String)> =
-                hashes.into_iter().map(|hash| ("compute_verification", hash)).collect();
+            let verification_transactions: Vec<(&str, String)> = result
+                .get("compute_verification_tx_hashes")
+                .and_then(|v| v.as_array())
+                .map(|hashes| {
+                    hashes
+                        .iter()
+                        .filter_map(|hash| {
+                            hash.as_str().map(|s| ("compute_verification", s.to_string()))
+                        })
+                        .collect::<Vec<(&str, String)>>()
+                })
+                .unwrap_or_else(Vec::new);
 
             transactions.extend(verification_transactions);
+
+            println!("transactions {:?}", transactions);
 
             for (tx_type, hash) in transactions {
                 self.process_transaction(current_count.try_into().unwrap(), tx_type, &hash).await;
@@ -131,11 +143,7 @@ impl SQLRelayer {
             .await
             .expect("Failed to get transaction");
 
-        //println!("Response for {} {}", tx_type, hash);
-        println!("body {:?}",res);
-
-        let body =
-            res.pointer("/result").expect("Missing txn body").to_string();
+        let body = res.pointer("/result/body").expect("Missing txn body").to_string();
 
         self.target_db.insert_transactions(seq_id, hash, &body, tx_type).await;
     }

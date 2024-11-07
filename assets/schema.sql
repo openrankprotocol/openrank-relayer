@@ -3,7 +3,7 @@
 CREATE TABLE transactions (
     id SERIAL PRIMARY KEY,
     type VARCHAR NOT NULL,
-    job_seq_number INTEGER NOT NULL UNIQUE,
+    job_seq_number INTEGER NOT NULL,
     body JSONB NOT NULL,
     "from" VARCHAR,
     "to" VARCHAR,

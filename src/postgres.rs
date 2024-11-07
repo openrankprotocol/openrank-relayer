@@ -128,7 +128,7 @@ impl SQLDatabase {
         // let serialized_tx = serde_json::to_string(&tx).expect("Failed to serialize TxWithHash");
         let body_json: Value = serde_json::from_str(&body).unwrap();
 
-        println!("hash {:?}",hash);
+        println!("hash {:?}", hash);
         // let event_id_base64 = BASE64_STANDARD.encode(event_id);
         // let hash = serde_json::to_string(&tx.hash).unwrap();
 
@@ -154,7 +154,7 @@ impl SQLDatabase {
                 if let Some(db_error) = e.as_db_error() {
                     if db_error.message().contains("duplicate key value violates unique constraint")
                     {
-                        log::warn!("Conflict occurred: internal_id '{}' already exists", internal_id);
+                        log::warn!("Error inserting transaction: {}", db_error.message());
                     } else {
                         log::error!("Error inserting transaction: {}", db_error.message());
                     }
