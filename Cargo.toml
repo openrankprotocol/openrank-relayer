@@ -1,0 +1,42 @@
+[package]
+name = "openrank-relayer"
+description = "OpenRank - Relayer"
+license = "MIT" # Update this to specific license
+version = "0.1.0" 
+authors = ["Jenya Nepoimannykh <hypnagonia@gmail.com>"] 
+edition = "2021" 
+
+[dependencies]
+openrank-common = { git = "https://github.com/openrankprotocol/openrank", branch = "main" }
+
+alloy-primitives = "0.8.8"
+libp2p = "0.53.2"
+futures = "0.3.30"
+tokio = { version = "1.38", features=["full"] }
+tracing = "0.1.37"
+tracing-subscriber = "0.3"
+hex = "0.4.3"
+rand = "0.8.5"
+alloy-rlp = "0.3.5"
+alloy-rlp-derive = "0.3.5"
+dotenv = "0.15.0"
+serde = "1.0"
+serde_json = "1.0"
+toml = "0.8"
+rocksdb = "0.22.0"
+sha3 = "0.10.8"
+jsonrpsee = "=0.24.5"
+k256 = "0.13.3"
+directories = "5.0.1"
+thiserror = "1.0.63"
+clap = "4.5.9"
+
+postgres = { version = "0.19", features = ["with-serde_json-1"] }
+log = "0.4"
+env_logger = "0.10"
+warp = "0.3" # or actix-web?
+async-graphql = "5.0" # or juniper for GraphQL?
+sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls"] }
+async-graphql-warp = "5.0"
+base64 = "0.22.1"
+tokio-postgres = "0.7.12"
