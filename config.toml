@@ -1,3 +1,0 @@
-[database]
-directory = "./local-storage"
-secondary = "./local-secondary-storage"
