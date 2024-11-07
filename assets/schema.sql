@@ -1,15 +1,15 @@
 -- todo adjust types
 
-CREATE TABLE events (
+CREATE TABLE transactions (
     id SERIAL PRIMARY KEY,
-    event_type VARCHAR,
-    event_id VARCHAR NOT NULL UNIQUE,
-    event_body JSONB NOT NULL,
+    type VARCHAR NOT NULL,
+    job_seq_number INTEGER NOT NULL UNIQUE,
+    body JSONB NOT NULL,
     "from" VARCHAR,
     "to" VARCHAR,
-    hash VARCHAR,
-    provider VARCHAR,
-    compute VARCHAR
+    hash VARCHAR NOT NULL,
+    internal_id VARCHAR NOT NULL UNIQUE,
+    provider VARCHAR
 );
 
 CREATE TABLE jobs (
@@ -27,5 +27,4 @@ CREATE TABLE state (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_event_id_hash ON events USING HASH (event_id);
-CREATE INDEX idx_event_hash ON events USING HASH (hash);
+CREATE INDEX idx_transactions_hash ON transactions USING HASH (hash);

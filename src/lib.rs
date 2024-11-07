@@ -34,10 +34,7 @@ impl SQLRelayer {
 
     async fn save_last_processed_key(&self, db_path: &str, last_processed_key: usize) {
         self.target_db
-            .save_last_processed_key(
-                &format!("relayer_last_key_{}", db_path),
-                last_processed_key as i32,
-            )
+            .save_last_processed_key(db_path, last_processed_key as i32)
             .await
             .expect("Failed to save last processed key");
     }
@@ -66,18 +63,20 @@ impl SQLRelayer {
             }
             let result = compute_result.get("result").unwrap();
 
-            let mut hashes = vec![
-                result
-                    .get("compute_commitment_tx_hash")
-                    .and_then(|v| v.as_str())
-                    .expect("must be a string")
-                    .to_string(),
-                result
-                    .get("compute_request_tx_hash")
-                    .and_then(|v| v.as_str())
-                    .expect("must be a string")
-                    .to_string(),
-            ];
+            let compute_commitment_tx_hash = result
+                .get("compute_commitment_tx_hash")
+                .and_then(|v| v.as_str())
+                .expect("must be a string")
+                .to_string();
+
+            let compute_request_tx_hash = result
+                .get("compute_request_tx_hash")
+                .and_then(|v| v.as_str())
+                .expect("must be a string")
+                .to_string();
+
+            let mut hashes =
+                vec![compute_commitment_tx_hash.clone(), compute_request_tx_hash.clone()];
 
             if let Some(verification_hashes) =
                 result.get("compute_verification_tx_hashes").and_then(|v| v.as_array())
@@ -92,13 +91,26 @@ impl SQLRelayer {
                 .and_then(|v| v.as_i64())
                 .expect("seq_number should be an integer") as i32;
 
-            self.target_db.insert_job(seq_number, hashes).await.unwrap();
+            self.target_db.insert_job(seq_number, hashes.clone()).await.unwrap();
+
+            let mut transactions = vec![
+                ("compute_commitment", compute_commitment_tx_hash.clone()),
+                ("compute_request", compute_request_tx_hash.clone()),
+            ];
+
+            let verification_transactions: Vec<(&str, String)> =
+                hashes.into_iter().map(|hash| ("compute_verification", hash)).collect();
+
+            transactions.extend(verification_transactions);
+
+            for (tx_type, hash) in transactions {
+                self.process_transaction(current_count.try_into().unwrap(), tx_type, &hash).await;
+            }
 
             current_count = current_count + 1;
-        }
-
-        if last_count < current_count {
-            self.save_last_processed_key("jobs", current_count).await;
+            if last_count < current_count {
+                self.save_last_processed_key("jobs", current_count).await;
+            }
         }
     }
 
@@ -110,5 +122,21 @@ impl SQLRelayer {
             info!("Running periodic index check...");
             self.index().await;
         }
+    }
+
+    async fn process_transaction(&self, seq_id: i32, tx_type: &str, hash: &str) {
+        let res = self
+            .protocol_client
+            .sequencer_get_tx(tx_type, hash)
+            .await
+            .expect("Failed to get transaction");
+
+        //println!("Response for {} {}", tx_type, hash);
+        println!("body {:?}",res);
+
+        let body =
+            res.pointer("/result").expect("Missing txn body").to_string();
+
+        self.target_db.insert_transactions(seq_id, hash, &body, tx_type).await;
     }
 }

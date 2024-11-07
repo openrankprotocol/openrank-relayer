@@ -47,10 +47,10 @@ impl SQLDatabase {
     }
 
     pub async fn drop_tables(&self) -> Result<(), Error> {
-        let drop_events = self.client.execute("DROP TABLE IF EXISTS events", &[]).await;
+        let drop_events = self.client.execute("DROP TABLE IF EXISTS transactions", &[]).await;
         match drop_events {
             Ok(_) => {
-                log::info!("Dropped events table.");
+                log::info!("Dropped transactions table.");
             },
             Err(e) => {
                 log::error!("Error dropping events table: {}", e);
@@ -122,27 +122,31 @@ impl SQLDatabase {
         }
     }
 
-    pub async fn insert_events(&self, event_id: &str, tx: &TxWithHash) -> Result<(), Error> {
-        let serialized_tx = serde_json::to_string(&tx).expect("Failed to serialize TxWithHash");
-        let event_body_json: Value = serde_json::from_str(&serialized_tx).unwrap();
+    pub async fn insert_transactions(
+        &self, job_seq_number: i32, hash: &str, body: &str, tx_type: &str,
+    ) -> Result<(), Error> {
+        // let serialized_tx = serde_json::to_string(&tx).expect("Failed to serialize TxWithHash");
+        let body_json: Value = serde_json::from_str(&body).unwrap();
 
-        let event_id_base64 = BASE64_STANDARD.encode(event_id);
-        let hash = serde_json::to_string(&tx.hash).unwrap();
+        println!("hash {:?}",hash);
+        // let event_id_base64 = BASE64_STANDARD.encode(event_id);
+        // let hash = serde_json::to_string(&tx.hash).unwrap();
 
+        let internal_id = format!("{}-{}", tx_type, hash);
         let result = self.client.execute(
-            "INSERT INTO events (event_id, event_body, hash) VALUES ($1, $2, $3) ON CONFLICT (event_id) DO NOTHING",
-            &[&event_id_base64, &event_body_json, &hash]
+            "INSERT INTO transactions (job_seq_number, hash, body, type, internal_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (internal_id) DO NOTHING",
+            &[&job_seq_number, &hash, &body_json, &tx_type, &internal_id]
         ).await;
 
         match result {
             Ok(rows) => {
                 if rows == 0 {
                     log::warn!(
-                        "No rows inserted, possibly due to conflict with event_id '{}'",
-                        event_id
+                        "No rows inserted, possibly due to conflict with internal_id '{}'",
+                        internal_id
                     );
                 } else {
-                    log::info!("Inserted {} row(s) into events table.", rows);
+                    log::info!("Inserted {} row(s) into transactions table.", rows);
                 }
                 Ok(())
             },
@@ -150,12 +154,12 @@ impl SQLDatabase {
                 if let Some(db_error) = e.as_db_error() {
                     if db_error.message().contains("duplicate key value violates unique constraint")
                     {
-                        log::warn!("Conflict occurred: event_id '{}' already exists", event_id);
+                        log::warn!("Conflict occurred: internal_id '{}' already exists", internal_id);
                     } else {
-                        log::error!("Error inserting event: {}", db_error.message());
+                        log::error!("Error inserting transaction: {}", db_error.message());
                     }
                 } else {
-                    log::error!("Error inserting event: {}", e);
+                    log::error!("Error inserting transaction: {}", e);
                 }
                 Err(e)
             },
