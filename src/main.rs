@@ -8,12 +8,6 @@ use std::error::Error;
 
 pub mod api;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-/// The configuration for the Relayer.
-pub struct Config {
-    pub database: db::Config,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
@@ -22,10 +16,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     let is_reindex = args.contains(&"reindex".to_string());
 
-    let config_loader = config::Loader::new("openrank-relayer")?;
-    let config: Config = config_loader.load_or_create(include_str!("../config.toml"))?;
+    // let config_loader = config::Loader::new("openrank-relayer")?;
+    // let config: Config = config_loader.load_or_create(include_str!("../config.toml"))?;
 
-    let mut relayer = SQLRelayer::init(config.database, is_reindex).await;
+    let mut relayer = SQLRelayer::init(is_reindex).await;
 
     let serve_job = tokio::spawn(async move { serve().await });
     let relayer_job = tokio::spawn(async move { relayer.start().await });

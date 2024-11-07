@@ -72,24 +72,3 @@ impl RpcClient {
         Ok(response)
     }
 }
-
-/*
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let client = RpcClient::new("https://or-dev-prod.k3l.io");
-
-    // Call sequencer_get_compute_result
-    let compute_result = client.sequencer_get_compute_result(0).await?;
-    println!("Compute Result: {:?}", compute_result);
-
-    // Call sequencer_get_results
-    let results = client.sequencer_get_results("35b8f06856b66b27b746c33fb8d779e23bc62715baf23d88c5ac31527d43d4d5", 0, 10).await?;
-    println!("Results: {:?}", results);
-
-    // Call sequencer_get_tx
-    let tx = client.sequencer_get_tx("compute_request", "35b8f06856b66b27b746c33fb8d779e23bc62715baf23d88c5ac31527d43d4d5").await?;
-    println!("Transaction: {:?}", tx);
-
-    Ok(())
-}
-    */
