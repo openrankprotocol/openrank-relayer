@@ -3,8 +3,8 @@ use crate::types::TxWithHash;
 use log::{error, info};
 use openrank_common::tx::{self, compute, consts};
 use std::collections::HashMap;
-use tokio::time::Duration;
 use std::env;
+use tokio::time::Duration;
 
 mod postgres;
 mod protocol_client;
