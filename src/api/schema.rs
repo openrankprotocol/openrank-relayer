@@ -58,7 +58,7 @@ impl QueryRoot {
 pub struct Transaction {
     pub id: i32,
     pub body: Value,
-    #[sqlx(rename = "type")] 
+    #[sqlx(rename = "type")]
     pub type_: String,
     pub hash: String,
 }

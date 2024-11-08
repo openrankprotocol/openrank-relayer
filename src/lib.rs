@@ -1,8 +1,5 @@
 use crate::protocol_client::RpcClient;
-use crate::types::TxWithHash;
-use log::{error, info};
-use openrank_common::tx::{self, compute, consts};
-use std::collections::HashMap;
+use log::info;
 use std::env;
 use tokio::time::Duration;
 
@@ -59,7 +56,7 @@ impl SQLRelayer {
                 .await
                 .unwrap();
 
-            if let Some(error) = compute_result.get("error") {
+            if compute_result.get("error").is_some() {
                 // error!("{:?}", compute_result);
                 break;
             }
@@ -119,7 +116,7 @@ impl SQLRelayer {
                 self.process_transaction(current_count.try_into().unwrap(), tx_type, &hash).await;
             }
 
-            current_count = current_count + 1;
+            current_count += 1;
             if last_count < current_count {
                 self.save_last_processed_key("jobs", current_count).await;
             }
@@ -145,6 +142,6 @@ impl SQLRelayer {
 
         let body = res.pointer("/result/body").expect("Missing txn body").to_string();
 
-        self.target_db.insert_transactions(seq_id, hash, &body, tx_type).await;
+        self.target_db.insert_transactions(seq_id, hash, &body, tx_type).await.unwrap();
     }
 }

@@ -1,6 +1,3 @@
-use crate::types::TxWithHash;
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
 use log::info;
 use serde_json::Value;
 use std::env;
@@ -125,7 +122,7 @@ impl SQLDatabase {
     pub async fn insert_transactions(
         &self, job_seq_number: i32, hash: &str, body: &str, tx_type: &str,
     ) -> Result<(), Error> {
-        let body_json: Value = serde_json::from_str(&body).unwrap();
+        let body_json: Value = serde_json::from_str(body).unwrap();
 
         let internal_id = format!("{}-{}", tx_type, hash);
         let result = self.client.execute(
