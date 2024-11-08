@@ -4,6 +4,7 @@ use log::{error, info};
 use openrank_common::tx::{self, compute, consts};
 use std::collections::HashMap;
 use tokio::time::Duration;
+use std::env;
 
 mod postgres;
 mod protocol_client;
@@ -27,7 +28,8 @@ impl SQLRelayer {
 
         target_db.init().await.unwrap();
 
-        let protocol_client = RpcClient::new("https://or-dev-prod.k3l.io");
+        let url = env::var("PROTOCOL_RPC_URL").expect("PROTOCOL_RPC_URL must be set");
+        let protocol_client = RpcClient::new(&url);
 
         SQLRelayer { target_db, protocol_client }
     }
@@ -112,8 +114,6 @@ impl SQLRelayer {
                 .unwrap_or_else(Vec::new);
 
             transactions.extend(verification_transactions);
-
-            println!("transactions {:?}", transactions);
 
             for (tx_type, hash) in transactions {
                 self.process_transaction(current_count.try_into().unwrap(), tx_type, &hash).await;

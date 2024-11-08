@@ -125,12 +125,7 @@ impl SQLDatabase {
     pub async fn insert_transactions(
         &self, job_seq_number: i32, hash: &str, body: &str, tx_type: &str,
     ) -> Result<(), Error> {
-        // let serialized_tx = serde_json::to_string(&tx).expect("Failed to serialize TxWithHash");
         let body_json: Value = serde_json::from_str(&body).unwrap();
-
-        println!("hash {:?}", hash);
-        // let event_id_base64 = BASE64_STANDARD.encode(event_id);
-        // let hash = serde_json::to_string(&tx.hash).unwrap();
 
         let internal_id = format!("{}-{}", tx_type, hash);
         let result = self.client.execute(
