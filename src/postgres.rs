@@ -47,10 +47,10 @@ impl SQLDatabase {
     }
 
     pub async fn drop_tables(&self) -> Result<(), Error> {
-        let drop_events = self.client.execute("DROP TABLE IF EXISTS events", &[]).await;
+        let drop_events = self.client.execute("DROP TABLE IF EXISTS transactions", &[]).await;
         match drop_events {
             Ok(_) => {
-                log::info!("Dropped events table.");
+                log::info!("Dropped transactions table.");
             },
             Err(e) => {
                 log::error!("Error dropping events table: {}", e);
@@ -69,30 +69,37 @@ impl SQLDatabase {
             },
         }
 
+        let drop_state = self.client.execute("DROP TABLE IF EXISTS jobs", &[]).await;
+        match drop_state {
+            Ok(_) => {
+                log::info!("Dropped job table.");
+            },
+            Err(e) => {
+                log::error!("Error dropping job table: {}", e);
+                return Err(e);
+            },
+        }
+
         Ok(())
     }
 
-    pub async fn insert_events(&self, event_id: &str, tx: &TxWithHash) -> Result<(), Error> {
-        let serialized_tx = serde_json::to_string(&tx).expect("Failed to serialize TxWithHash");
-        let event_body_json: Value = serde_json::from_str(&serialized_tx).unwrap();
-
-        let event_id_base64 = BASE64_STANDARD.encode(event_id);
-        let hash = serde_json::to_string(&tx.hash).unwrap();
-
+    pub async fn insert_job(
+        &self, seq_number: i32, transaction_hashes: Vec<String>,
+    ) -> Result<(), Error> {
         let result = self.client.execute(
-            "INSERT INTO events (event_id, event_body, hash) VALUES ($1, $2, $3) ON CONFLICT (event_id) DO NOTHING",
-            &[&event_id_base64, &event_body_json, &hash]
+            "INSERT INTO jobs (transaction_hashes, seq_number) VALUES ($1, $2) ON CONFLICT (seq_number) DO NOTHING",
+            &[&transaction_hashes, &seq_number]
         ).await;
 
         match result {
             Ok(rows) => {
                 if rows == 0 {
                     log::warn!(
-                        "No rows inserted, possibly due to conflict with event_id '{}'",
-                        event_id
+                        "No rows inserted, possibly due to conflict with seq_number '{}'",
+                        seq_number
                     );
                 } else {
-                    log::info!("Inserted {} row(s) into events table.", rows);
+                    log::info!("Inserted {} row(s) into jobs table.", rows);
                 }
                 Ok(())
             },
@@ -100,12 +107,54 @@ impl SQLDatabase {
                 if let Some(db_error) = e.as_db_error() {
                     if db_error.message().contains("duplicate key value violates unique constraint")
                     {
-                        log::warn!("Conflict occurred: event_id '{}' already exists", event_id);
+                        log::warn!(
+                            "Conflict occurred: seq_number '{}' already exists",
+                            seq_number
+                        );
                     } else {
-                        log::error!("Error inserting event: {}", db_error.message());
+                        log::error!("Error inserting job: {}", db_error.message());
                     }
                 } else {
-                    log::error!("Error inserting event: {}", e);
+                    log::error!("Error inserting job: {}", e);
+                }
+                Err(e)
+            },
+        }
+    }
+
+    pub async fn insert_transactions(
+        &self, job_seq_number: i32, hash: &str, body: &str, tx_type: &str,
+    ) -> Result<(), Error> {
+        let body_json: Value = serde_json::from_str(&body).unwrap();
+
+        let internal_id = format!("{}-{}", tx_type, hash);
+        let result = self.client.execute(
+            "INSERT INTO transactions (job_seq_number, hash, body, type, internal_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (internal_id) DO NOTHING",
+            &[&job_seq_number, &hash, &body_json, &tx_type, &internal_id]
+        ).await;
+
+        match result {
+            Ok(rows) => {
+                if rows == 0 {
+                    log::warn!(
+                        "No rows inserted, possibly due to conflict with internal_id '{}'",
+                        internal_id
+                    );
+                } else {
+                    log::info!("Inserted {} row(s) into transactions table.", rows);
+                }
+                Ok(())
+            },
+            Err(e) => {
+                if let Some(db_error) = e.as_db_error() {
+                    if db_error.message().contains("duplicate key value violates unique constraint")
+                    {
+                        log::warn!("Error inserting transaction: {}", db_error.message());
+                    } else {
+                        log::error!("Error inserting transaction: {}", db_error.message());
+                    }
+                } else {
+                    log::error!("Error inserting transaction: {}", e);
                 }
                 Err(e)
             },

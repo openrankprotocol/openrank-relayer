@@ -10,24 +10,24 @@ pub struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
-    async fn events(
+    async fn transactions(
         &self, ctx: &Context<'_>, limit: Option<i32>, offset: Option<i32>, hash: Option<String>,
-    ) -> Vec<Event> {
+    ) -> Vec<Transaction> {
         let pool = ctx.data::<PgPool>().unwrap();
 
         let limit = limit.unwrap_or(DEFAULT_LIMIT);
         let offset = offset.unwrap_or(0);
 
         let query = if let Some(ref hash) = hash {
-            sqlx::query_as::<_, Event>(
-                "SELECT id, event_id, event_body, hash FROM events WHERE hash = $1 LIMIT $2 OFFSET $3"
+            sqlx::query_as::<_, Transaction>(
+                "SELECT id, body, type, hash FROM transactions WHERE hash = $1 LIMIT $2 OFFSET $3",
             )
             .bind(hash)
             .bind(limit)
             .bind(offset)
         } else {
-            sqlx::query_as::<_, Event>(
-                "SELECT id, event_id, event_body, hash FROM events LIMIT $1 OFFSET $2",
+            sqlx::query_as::<_, Transaction>(
+                "SELECT id, body, type, hash FROM transactions LIMIT $1 OFFSET $2",
             )
             .bind(limit)
             .bind(offset)
@@ -35,14 +35,39 @@ impl QueryRoot {
 
         query.fetch_all(pool).await.unwrap()
     }
+
+    async fn jobs(&self, ctx: &Context<'_>, limit: Option<i32>, offset: Option<i32>) -> Vec<Job> {
+        let pool = ctx.data::<PgPool>().unwrap();
+
+        let limit = limit.unwrap_or(DEFAULT_LIMIT);
+        let offset = offset.unwrap_or(0);
+
+        sqlx::query_as::<_, Job>(
+            "SELECT id, transaction_hashes, seq_number FROM jobs LIMIT $1 OFFSET $2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+}
+
+// Define the Transaction struct to match the `transactions` table structure
+#[derive(SimpleObject, sqlx::FromRow, Serialize, Deserialize)]
+pub struct Transaction {
+    pub id: i32,
+    pub body: Value,
+    #[sqlx(rename = "type")] 
+    pub type_: String,
+    pub hash: String,
 }
 
 #[derive(SimpleObject, sqlx::FromRow, Serialize, Deserialize)]
-pub struct Event {
+pub struct Job {
     pub id: i32,
-    pub event_id: String,
-    pub event_body: Value,
-    pub hash: String,
+    pub transaction_hashes: Vec<String>,
+    pub seq_number: i32,
 }
 
 pub type MySchema =

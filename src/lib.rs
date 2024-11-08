@@ -1,24 +1,24 @@
+use crate::protocol_client::RpcClient;
 use crate::types::TxWithHash;
-use log::info;
-use openrank_common::db::{self, Db, DbItem};
+use log::{error, info};
 use openrank_common::tx::{self, compute, consts};
 use std::collections::HashMap;
+use std::env;
 use tokio::time::Duration;
 
 mod postgres;
+mod protocol_client;
 mod types;
 
 const INTERVAL_SECONDS: u64 = 10;
 
 pub struct SQLRelayer {
-    // todo use only common db, here because common lib db does not expose iterator
-    db: Db,
-    last_processed_keys: HashMap<String, Option<usize>>,
     target_db: postgres::SQLDatabase,
+    protocol_client: RpcClient,
 }
 
 impl SQLRelayer {
-    pub async fn init(db_config: db::Config, is_reindex: bool) -> Self {
+    pub async fn init(is_reindex: bool) -> Self {
         let target_db = postgres::SQLDatabase::connect().await.expect("Connect to Postgres db");
 
         if is_reindex {
@@ -28,143 +28,101 @@ impl SQLRelayer {
 
         target_db.init().await.unwrap();
 
-        let mut last_processed_keys = HashMap::new();
+        let url = env::var("PROTOCOL_RPC_URL").expect("PROTOCOL_RPC_URL must be set");
+        let protocol_client = RpcClient::new(&url);
 
-        let path = db_config.clone().secondary.expect("No secondary path found");
-        let last_processed_key = target_db
-            .load_last_processed_key(&format!("relayer_last_key_{}_{}", path, "tx"))
-            .await
-            .expect("Failed to load last processed key");
-
-        let db = Db::new_secondary(
-            &db_config,
-            &[tx::Tx::get_cf().as_str(), compute::Result::get_cf().as_str()],
-        )
-        .unwrap();
-        last_processed_keys.insert(path, last_processed_key);
-
-        SQLRelayer { db, last_processed_keys, target_db }
+        SQLRelayer { target_db, protocol_client }
     }
 
-    async fn save_last_processed_key(&self, db_path: &str, topic: &str, last_processed_key: usize) {
+    async fn save_last_processed_key(&self, db_path: &str, last_processed_key: usize) {
         self.target_db
-            .save_last_processed_key(
-                &format!("relayer_last_key_{}_{}", db_path, topic),
-                last_processed_key as i32,
-            )
+            .save_last_processed_key(db_path, last_processed_key as i32)
             .await
             .expect("Failed to save last processed key");
     }
 
-    fn get_tx_with_hash(&self, kind: &str, hash: tx::TxHash) -> (Vec<u8>, TxWithHash) {
-        let tx_key = tx::Tx::construct_full_key(kind, hash);
-        let tx = self.db.get::<tx::Tx>(tx_key.clone()).unwrap();
-        let tx_with_hash = TxWithHash { tx: tx.clone(), hash: tx.hash() };
-        (tx_key, tx_with_hash)
-    }
-
     async fn index(&mut self) {
-        // Refresh secondary instance before starting
-        self.db.refresh().unwrap();
+        let last_count = self
+            .target_db
+            .load_last_processed_key("jobs")
+            .await
+            .expect("Failed to load last processed key")
+            .unwrap_or(0);
 
-        let results = self.db.read_from_end::<compute::Result>("result", None).unwrap();
-        let dir = self.db.get_config().secondary.expect("Secondary path missing");
-        let last_count = self.last_processed_keys[dir.as_str()].unwrap_or(0);
-        let mut current_count = 0;
+        let mut current_count = last_count;
 
         log::info!("Indexing db, last_count: {:?}", last_count);
-        for res in &results[0..] {
-            // Ensure Result's are loaded in sequence
-            // assert_eq!(last_count as u64, res.seq_number.unwrap());
+        loop {
+            let compute_result = self
+                .protocol_client
+                .sequencer_get_compute_result(current_count.try_into().unwrap())
+                .await
+                .unwrap();
 
-            // ComputeRequest
-            let (request_key, request_tx_with_hash) =
-                self.get_tx_with_hash(consts::COMPUTE_REQUEST, res.compute_request_tx_hash.clone());
+            if let Some(error) = compute_result.get("error") {
+                // error!("{:?}", compute_result);
+                break;
+            }
+            let result = compute_result.get("result").unwrap();
 
-            current_count += 1;
+            let compute_commitment_tx_hash = result
+                .get("compute_commitment_tx_hash")
+                .and_then(|v| v.as_str())
+                .expect("must be a string")
+                .to_string();
 
-            let request_key_str = String::from_utf8_lossy(&request_key);
+            let compute_request_tx_hash = result
+                .get("compute_request_tx_hash")
+                .and_then(|v| v.as_str())
+                .expect("must be a string")
+                .to_string();
 
-            if current_count > last_count {
-                self.target_db
-                    .insert_events(&request_key_str, &request_tx_with_hash)
-                    .await
-                    .unwrap();
+            let mut hashes =
+                vec![compute_commitment_tx_hash.clone(), compute_request_tx_hash.clone()];
+
+            if let Some(verification_hashes) =
+                result.get("compute_verification_tx_hashes").and_then(|v| v.as_array())
+            {
+                hashes.extend(
+                    verification_hashes.iter().filter_map(|v| v.as_str().map(|s| s.to_string())),
+                );
             }
 
-            // ComputeCommitment
-            let (commitment_key, commitment_tx_with_hash) = self.get_tx_with_hash(
-                consts::COMPUTE_COMMITMENT,
-                res.compute_commitment_tx_hash.clone(),
-            );
+            let seq_number = result
+                .get("seq_number")
+                .and_then(|v| v.as_i64())
+                .expect("seq_number should be an integer") as i32;
 
-            current_count += 1;
+            self.target_db.insert_job(seq_number, hashes.clone()).await.unwrap();
 
-            let commitment_key_str = String::from_utf8_lossy(&commitment_key);
+            let mut transactions = vec![
+                ("compute_commitment", compute_commitment_tx_hash.clone()),
+                ("compute_request", compute_request_tx_hash.clone()),
+            ];
 
-            if current_count > last_count {
-                self.target_db
-                    .insert_events(&commitment_key_str, &commitment_tx_with_hash)
-                    .await
-                    .unwrap();
+            let verification_transactions: Vec<(&str, String)> = result
+                .get("compute_verification_tx_hashes")
+                .and_then(|v| v.as_array())
+                .map(|hashes| {
+                    hashes
+                        .iter()
+                        .filter_map(|hash| {
+                            hash.as_str().map(|s| ("compute_verification", s.to_string()))
+                        })
+                        .collect::<Vec<(&str, String)>>()
+                })
+                .unwrap_or_else(Vec::new);
+
+            transactions.extend(verification_transactions);
+
+            for (tx_type, hash) in transactions {
+                self.process_transaction(current_count.try_into().unwrap(), tx_type, &hash).await;
             }
 
-            // ComputeVerification
-            for verification_tx_hash in res.compute_verification_tx_hashes.clone() {
-                current_count += 1;
-
-                let (verification_key, verification_tx_with_hash) =
-                    self.get_tx_with_hash(consts::COMPUTE_VERIFICATION, verification_tx_hash);
-
-                let verification_key_str = String::from_utf8_lossy(&verification_key);
-
-                if current_count > last_count {
-                    self.target_db
-                        .insert_events(&verification_key_str, &verification_tx_with_hash)
-                        .await
-                        .unwrap();
-                }
+            current_count = current_count + 1;
+            if last_count < current_count {
+                self.save_last_processed_key("jobs", current_count).await;
             }
-        }
-
-        let trust_updates = self.db.read_from_end::<tx::Tx>(consts::TRUST_UPDATE, None).unwrap();
-
-        for update in trust_updates {
-            current_count += 1;
-
-            let trust_update_key = tx::Tx::construct_full_key(consts::TRUST_UPDATE, update.hash());
-            let trust_update_tx_with_hash = TxWithHash { tx: update.clone(), hash: update.hash() };
-
-            let trust_update_key_str = String::from_utf8_lossy(&trust_update_key);
-
-            if current_count > last_count {
-                self.target_db
-                    .insert_events(&trust_update_key_str, &trust_update_tx_with_hash)
-                    .await
-                    .unwrap();
-            }
-        }
-
-        let seed_updates = self.db.read_from_end::<tx::Tx>(consts::SEED_UPDATE, None).unwrap();
-
-        for update in seed_updates {
-            current_count += 1;
-
-            let seed_update_key = tx::Tx::construct_full_key(consts::SEED_UPDATE, update.hash());
-            let seed_update_tx_with_hash = TxWithHash { tx: update.clone(), hash: update.hash() };
-
-            let seed_update_key_str = String::from_utf8_lossy(&seed_update_key);
-            if current_count > last_count {
-                self.target_db
-                    .insert_events(&seed_update_key_str, &seed_update_tx_with_hash)
-                    .await
-                    .unwrap();
-            }
-        }
-
-        if last_count < current_count {
-            self.last_processed_keys.insert(dir.clone(), Some(current_count));
-            self.save_last_processed_key(dir.as_str(), "tx", current_count).await;
         }
     }
 
@@ -176,5 +134,17 @@ impl SQLRelayer {
             info!("Running periodic index check...");
             self.index().await;
         }
+    }
+
+    async fn process_transaction(&self, seq_id: i32, tx_type: &str, hash: &str) {
+        let res = self
+            .protocol_client
+            .sequencer_get_tx(tx_type, hash)
+            .await
+            .expect("Failed to get transaction");
+
+        let body = res.pointer("/result/body").expect("Missing txn body").to_string();
+
+        self.target_db.insert_transactions(seq_id, hash, &body, tx_type).await;
     }
 }
