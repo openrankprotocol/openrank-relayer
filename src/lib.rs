@@ -175,6 +175,6 @@ impl SQLRelayer {
             }
         }
 
-        self.target_db.insert_transactions(seq_id, hash, &body, tx_type, &to, &from).await;
+        let _ = self.target_db.insert_transactions(seq_id, hash, &body, tx_type, &to, &from).await;
     }
 }
