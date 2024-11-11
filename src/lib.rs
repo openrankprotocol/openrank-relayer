@@ -63,7 +63,7 @@ impl SQLRelayer {
                 .await
                 .unwrap();
 
-            if let Some(error) = compute_result.get("error") {
+            if compute_result.get("error").is_some() {
                 // error!("{:?}", compute_result);
                 break;
             }
@@ -123,7 +123,7 @@ impl SQLRelayer {
                 self.process_transaction(current_count.try_into().unwrap(), tx_type, &hash).await;
             }
 
-            current_count = current_count + 1;
+            current_count += 1;
             if last_count < current_count {
                 self.save_last_processed_key("jobs", current_count).await;
             }
