@@ -1,4 +1,5 @@
 use async_graphql::{Context, Object, Schema, SimpleObject};
+use async_graphql::{EmptyMutation, EmptySubscription};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -73,15 +74,8 @@ pub struct Job {
     pub seq_number: i32,
 }
 
-pub type MySchema =
-    Schema<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription>;
+pub type MySchema = Schema<QueryRoot, EmptyMutation, EmptySubscription>;
 
 pub fn build_schema(pool: PgPool) -> MySchema {
-    Schema::build(
-        QueryRoot,
-        async_graphql::EmptyMutation,
-        async_graphql::EmptySubscription,
-    )
-    .data(pool)
-    .finish()
+    Schema::build(QueryRoot, EmptyMutation, EmptySubscription).data(pool).finish()
 }
