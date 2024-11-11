@@ -1,13 +1,7 @@
 use crate::protocol_client::RpcClient;
-use crate::types::TxWithHash;
 use async_recursion::async_recursion;
-use log::{error, info};
-use openrank_common::tx::{self, compute, consts};
-use std::collections::HashMap;
+use log::{info};
 use std::env;
-use std::future::Future;
-use std::pin::Pin;
-use tokio::task;
 use tokio::time::Duration;
 
 mod postgres;
