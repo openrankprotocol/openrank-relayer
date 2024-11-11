@@ -149,8 +149,16 @@ impl SQLRelayer {
             .expect("Failed to get transaction");
 
         let body = res.pointer("/result/body").expect("Missing txn body").to_string();
-        let to = res.pointer("/result/to").expect("Missing to body").to_string();
-        let from = res.pointer("/result/from").expect("Missing from body").to_string();
+        let to = res
+            .pointer("/result/to")
+            .and_then(|v| v.as_str())
+            .expect("must be a string")
+            .to_string();
+        let from = res
+            .pointer("/result/from")
+            .and_then(|v| v.as_str())
+            .expect("must be a string")
+            .to_string();
 
         if tx_type == "compute_commitment" {
             let assignment_tx_hash = res
