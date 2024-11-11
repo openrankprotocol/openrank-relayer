@@ -1,6 +1,6 @@
 use crate::protocol_client::RpcClient;
 use async_recursion::async_recursion;
-use log::{info};
+use log::info;
 use std::env;
 use tokio::time::Duration;
 
