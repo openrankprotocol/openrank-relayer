@@ -2,7 +2,6 @@ use reqwest::Client;
 use serde_json::json;
 use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct RpcClient {
@@ -36,7 +35,7 @@ impl RpcClient {
         Ok(response)
     }
 
-    pub async fn sequencer_get_results(
+    pub async fn _sequencer_get_results(
         &self, request_tx_hash: &str, start: u64, size: u64,
     ) -> Result<serde_json::Value, Box<dyn Error>> {
         let request_id = self.get_next_id();

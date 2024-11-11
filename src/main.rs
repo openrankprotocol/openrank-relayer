@@ -1,8 +1,6 @@
 use api::server::serve;
 use dotenv::dotenv;
-use openrank_common::{config, db};
 use openrank_relayer::{self, SQLRelayer};
-use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
 
