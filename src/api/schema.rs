@@ -20,14 +20,14 @@ impl QueryRoot {
 
         let query = if let Some(ref hash) = hash {
             sqlx::query_as::<_, Transaction>(
-                "SELECT id, body, type, hash, job_seq_number FROM transactions WHERE hash = $1 LIMIT $2 OFFSET $3",
+                "SELECT id, body, type, hash, job_seq_number, \"to\", \"from\" FROM transactions WHERE hash = $1 LIMIT $2 OFFSET $3",
             )
             .bind(hash)
             .bind(limit)
             .bind(offset)
         } else {
             sqlx::query_as::<_, Transaction>(
-                "SELECT id, body, type, hash, job_seq_number FROM transactions LIMIT $1 OFFSET $2",
+                "SELECT id, body, type, hash, job_seq_number, \"to\", \"from\" FROM transactions LIMIT $1 OFFSET $2",
             )
             .bind(limit)
             .bind(offset)
@@ -62,6 +62,8 @@ pub struct Transaction {
     pub type_: String,
     pub hash: String,
     pub job_seq_number: i32,
+    pub to: String,
+    pub from: String,
 }
 
 #[derive(SimpleObject, sqlx::FromRow, Serialize, Deserialize)]

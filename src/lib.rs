@@ -149,6 +149,8 @@ impl SQLRelayer {
             .expect("Failed to get transaction");
 
         let body = res.pointer("/result/body").expect("Missing txn body").to_string();
+        let to = res.pointer("/result/to").expect("Missing to body").to_string();
+        let from = res.pointer("/result/from").expect("Missing from body").to_string();
 
         if tx_type == "compute_commitment" {
             let assignment_tx_hash = res
@@ -171,6 +173,6 @@ impl SQLRelayer {
             }
         }
 
-        self.target_db.insert_transactions(seq_id, hash, &body, tx_type).await;
+        self.target_db.insert_transactions(seq_id, hash, &body, tx_type, &to, &from).await;
     }
 }
