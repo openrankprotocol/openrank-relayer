@@ -1,9 +1,13 @@
 use crate::protocol_client::RpcClient;
 use crate::types::TxWithHash;
+use async_recursion::async_recursion;
 use log::{error, info};
 use openrank_common::tx::{self, compute, consts};
 use std::collections::HashMap;
 use std::env;
+use std::future::Future;
+use std::pin::Pin;
+use tokio::task;
 use tokio::time::Duration;
 
 mod postgres;
@@ -136,6 +140,7 @@ impl SQLRelayer {
         }
     }
 
+    #[async_recursion]
     async fn process_transaction(&self, seq_id: i32, tx_type: &str, hash: &str) {
         let res = self
             .protocol_client
@@ -144,6 +149,27 @@ impl SQLRelayer {
             .expect("Failed to get transaction");
 
         let body = res.pointer("/result/body").expect("Missing txn body").to_string();
+
+        if tx_type == "compute_commitment" {
+            let assignment_tx_hash = res
+                .pointer("/result/body/ComputeCommitment/assignment_tx_hash")
+                .and_then(|v| v.as_str())
+                .expect("must be a string")
+                .to_string();
+
+            self.process_transaction(seq_id, "compute_assignment", &assignment_tx_hash).await;
+
+            if let Some(scores_tx_hashes) = res
+                .pointer("/result/body/ComputeCommitment/scores_tx_hashes")
+                .and_then(|v| v.as_array())
+            {
+                for score_tx_hash in scores_tx_hashes {
+                    if let Some(score_tx_hash_str) = score_tx_hash.as_str() {
+                        self.process_transaction(seq_id, "compute_scores", score_tx_hash_str).await;
+                    }
+                }
+            }
+        }
 
         self.target_db.insert_transactions(seq_id, hash, &body, tx_type).await;
     }
