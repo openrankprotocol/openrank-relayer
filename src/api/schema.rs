@@ -1,4 +1,5 @@
 use async_graphql::{Context, Object, Schema, SimpleObject};
+use async_graphql::{EmptyMutation, EmptySubscription};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -20,14 +21,14 @@ impl QueryRoot {
 
         let query = if let Some(ref hash) = hash {
             sqlx::query_as::<_, Transaction>(
-                "SELECT id, body, type, hash FROM transactions WHERE hash = $1 LIMIT $2 OFFSET $3",
+                "SELECT id, body, type, hash, job_seq_number, \"to\", \"from\" FROM transactions WHERE hash = $1 LIMIT $2 OFFSET $3",
             )
             .bind(hash)
             .bind(limit)
             .bind(offset)
         } else {
             sqlx::query_as::<_, Transaction>(
-                "SELECT id, body, type, hash FROM transactions LIMIT $1 OFFSET $2",
+                "SELECT id, body, type, hash, job_seq_number, \"to\", \"from\" FROM transactions LIMIT $1 OFFSET $2",
             )
             .bind(limit)
             .bind(offset)
@@ -61,6 +62,9 @@ pub struct Transaction {
     #[sqlx(rename = "type")]
     pub type_: String,
     pub hash: String,
+    pub job_seq_number: i32,
+    pub to: String,
+    pub from: String,
 }
 
 #[derive(SimpleObject, sqlx::FromRow, Serialize, Deserialize)]
@@ -70,15 +74,8 @@ pub struct Job {
     pub seq_number: i32,
 }
 
-pub type MySchema =
-    Schema<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription>;
+pub type MySchema = Schema<QueryRoot, EmptyMutation, EmptySubscription>;
 
 pub fn build_schema(pool: PgPool) -> MySchema {
-    Schema::build(
-        QueryRoot,
-        async_graphql::EmptyMutation,
-        async_graphql::EmptySubscription,
-    )
-    .data(pool)
-    .finish()
+    Schema::build(QueryRoot, EmptyMutation, EmptySubscription).data(pool).finish()
 }

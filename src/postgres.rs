@@ -120,14 +120,14 @@ impl SQLDatabase {
     }
 
     pub async fn insert_transactions(
-        &self, job_seq_number: i32, hash: &str, body: &str, tx_type: &str,
+        &self, job_seq_number: i32, hash: &str, body: &str, tx_type: &str, to: &str, from: &str,
     ) -> Result<(), Error> {
         let body_json: Value = serde_json::from_str(body).unwrap();
 
         let internal_id = format!("{}-{}", tx_type, hash);
         let result = self.client.execute(
-            "INSERT INTO transactions (job_seq_number, hash, body, type, internal_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (internal_id) DO NOTHING",
-            &[&job_seq_number, &hash, &body_json, &tx_type, &internal_id]
+            "INSERT INTO transactions (job_seq_number, hash, body, type, internal_id, \"to\", \"from\") VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (internal_id) DO NOTHING",
+            &[&job_seq_number, &hash, &body_json, &tx_type, &internal_id, &to, &from]
         ).await;
 
         match result {

@@ -37,7 +37,8 @@ env_logger = "0.10"
 warp = "0.3" # or actix-web?
 async-graphql = "7.0" # or juniper for GraphQL?
 sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls"] }
-async-graphql-warp = "5.0"
+async-graphql-warp = "7.0"
 base64 = "0.22.1"
 tokio-postgres = "0.7.12"
 reqwest = { version = "0.12.9", features = ["json"] }
+async-recursion = "1.1.1"
