@@ -34,16 +34,13 @@ impl SQLRelayer {
 
     async fn save_last_processed_key(&self, db_path: &str, last_processed_key: usize) {
         self.target_db
-            .save_last_processed_key(db_path, last_processed_key as i32)
-            .await
+            .save_last_processed_key(db_path, last_processed_key as i32).await
             .expect("Failed to save last processed key");
     }
 
     async fn index(&mut self) {
-        let last_count = self
-            .target_db
-            .load_last_processed_key("jobs")
-            .await
+        let last_count = self.target_db
+            .load_last_processed_key("jobs").await
             .expect("Failed to load last processed key")
             .unwrap_or(0);
 
@@ -51,10 +48,8 @@ impl SQLRelayer {
 
         log::info!("Indexing db, last_count: {:?}", last_count);
         loop {
-            let compute_result = self
-                .protocol_client
-                .sequencer_get_compute_result(current_count.try_into().unwrap())
-                .await
+            let compute_result = self.protocol_client
+                .sequencer_get_compute_result(current_count.try_into().unwrap()).await
                 .unwrap();
 
             if compute_result.get("error").is_some() {
@@ -75,14 +70,18 @@ impl SQLRelayer {
                 .expect("must be a string")
                 .to_string();
 
-            let mut hashes =
-                vec![compute_commitment_tx_hash.clone(), compute_request_tx_hash.clone()];
+            let mut hashes = vec![
+                compute_commitment_tx_hash.clone(),
+                compute_request_tx_hash.clone()
+            ];
 
-            if let Some(verification_hashes) =
-                result.get("compute_verification_tx_hashes").and_then(|v| v.as_array())
+            if
+                let Some(verification_hashes) = result
+                    .get("compute_verification_tx_hashes")
+                    .and_then(|v| v.as_array())
             {
                 hashes.extend(
-                    verification_hashes.iter().filter_map(|v| v.as_str().map(|s| s.to_string())),
+                    verification_hashes.iter().filter_map(|v| v.as_str().map(|s| s.to_string()))
                 );
             }
 
@@ -91,11 +90,16 @@ impl SQLRelayer {
                 .and_then(|v| v.as_i64())
                 .expect("seq_number should be an integer") as i32;
 
-            self.target_db.insert_job(seq_number, hashes.clone()).await.unwrap();
+            let timestamp = result
+                .get("timestamp")
+                .and_then(|v| v.as_i64())
+                .expect("seq_number should be an integer") as i32;
+
+            self.target_db.insert_job(seq_number, timestamp, hashes.clone()).await.unwrap();
 
             let mut transactions = vec![
                 ("compute_commitment", compute_commitment_tx_hash.clone()),
-                ("compute_request", compute_request_tx_hash.clone()),
+                ("compute_request", compute_request_tx_hash.clone())
             ];
 
             let verification_transactions: Vec<(&str, String)> = result
@@ -136,10 +140,8 @@ impl SQLRelayer {
 
     #[async_recursion]
     async fn process_transaction(&self, seq_id: i32, tx_type: &str, hash: &str) {
-        let res = self
-            .protocol_client
-            .sequencer_get_tx(tx_type, hash)
-            .await
+        let res = self.protocol_client
+            .sequencer_get_tx(tx_type, hash).await
             .expect("Failed to get transaction");
 
         let body = res.pointer("/result/body").expect("Missing txn body").to_string();
@@ -163,9 +165,10 @@ impl SQLRelayer {
 
             self.process_transaction(seq_id, "compute_assignment", &assignment_tx_hash).await;
 
-            if let Some(scores_tx_hashes) = res
-                .pointer("/result/body/ComputeCommitment/scores_tx_hashes")
-                .and_then(|v| v.as_array())
+            if
+                let Some(scores_tx_hashes) = res
+                    .pointer("/result/body/ComputeCommitment/scores_tx_hashes")
+                    .and_then(|v| v.as_array())
             {
                 for score_tx_hash in scores_tx_hashes {
                     if let Some(score_tx_hash_str) = score_tx_hash.as_str() {
