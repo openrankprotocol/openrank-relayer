@@ -15,7 +15,8 @@ CREATE TABLE transactions (
 CREATE TABLE jobs (
     id SERIAL PRIMARY KEY, 
     transaction_hashes VARCHAR[] NOT NULL, 
-    seq_number INTEGER NOT NULL UNIQUE
+    seq_number INTEGER NOT NULL UNIQUE,
+    timestamp INTEGER -- or date?
 );
 
 CREATE INDEX idx_jobs_seq_number ON jobs (seq_number);

@@ -81,11 +81,11 @@ impl SQLDatabase {
     }
 
     pub async fn insert_job(
-        &self, seq_number: i32, transaction_hashes: Vec<String>,
+        &self, seq_number: i32, timestamp: i32, transaction_hashes: Vec<String>,
     ) -> Result<(), Error> {
         let result = self.client.execute(
-            "INSERT INTO jobs (transaction_hashes, seq_number) VALUES ($1, $2) ON CONFLICT (seq_number) DO NOTHING",
-            &[&transaction_hashes, &seq_number]
+            "INSERT INTO jobs (transaction_hashes, seq_number, timestamp) VALUES ($1, $2, $3) ON CONFLICT (seq_number) DO NOTHING",
+            &[&transaction_hashes, &seq_number, &timestamp]
         ).await;
 
         match result {
