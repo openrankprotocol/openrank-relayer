@@ -54,7 +54,7 @@ impl QueryRoot {
         let offset = offset.unwrap_or(0);
 
         sqlx::query_as::<_, Job>(
-            "SELECT id, transaction_hashes, seq_number FROM jobs LIMIT $1 OFFSET $2",
+            "SELECT id, transaction_hashes, seq_number, timestamp FROM jobs LIMIT $1 OFFSET $2",
         )
         .bind(limit)
         .bind(offset)
@@ -82,6 +82,7 @@ pub struct Job {
     pub id: i32,
     pub transaction_hashes: Vec<String>,
     pub seq_number: i32,
+    pub timestamp: i32,
 }
 
 pub type MySchema = Schema<QueryRoot, EmptyMutation, EmptySubscription>;
